@@ -59,6 +59,8 @@ To start:
 
     ssserver -c /etc/shadowsocks.json
 
+### 添加用户名密码授权
+
 
 Documentation
 -------------
