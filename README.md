@@ -60,10 +60,14 @@ To start:
     ssserver -c /etc/shadowsocks.json
 
 ### 添加用户名密码授权
-在配置文件里配置:
+配置文件里添加配置:
+
     "enable_auth": true,  在不需要验证的情况下，值设为false
+
     "username": "username",
+
     "passwd": "passwd"
+
 
 Documentation
 -------------
