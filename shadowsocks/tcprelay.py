@@ -26,7 +26,7 @@ import logging
 import traceback
 import random
 
-from shadowsocks import cryptor, eventloop, shell, common
+from shadowsocks import cryptor, eventloop, shell, common, authuser_conf
 from shadowsocks.common import parse_header, onetimeauth_verify, \
     onetimeauth_gen, ONETIMEAUTH_BYTES, ONETIMEAUTH_CHUNK_BYTES, \
     ONETIMEAUTH_CHUNK_DATA_LEN, ADDRTYPE_AUTH
@@ -38,6 +38,7 @@ MSG_FASTOPEN = 0x20000000
 
 # SOCKS METHOD definition
 METHOD_NOAUTH = 0
+METHOD_USERPW = 2
 
 # SOCKS command definition
 CMD_CONNECT = 1
@@ -68,6 +69,7 @@ CMD_UDP_ASSOCIATE = 3
 # stage 3 DNS resolved, connect to remote
 # stage 4 still connecting, more data from local received
 # stage 5 remote connected, piping local and remote
+# stage 6 wait auth user and pass
 
 STAGE_INIT = 0
 STAGE_ADDR = 1
@@ -76,6 +78,7 @@ STAGE_DNS = 3
 STAGE_CONNECTING = 4
 STAGE_STREAM = 5
 STAGE_DESTROYED = -1
+STAGE_USERPASS = 6
 
 # for each handler, we have 2 stream directions:
 #    upstream:    from client to server direction
@@ -104,6 +107,9 @@ class BadSocksHeader(Exception):
 
 
 class NoAcceptableMethods(Exception):
+    pass
+
+class UserPassAuth(Exception):
     pass
 
 
@@ -526,14 +532,56 @@ class TCPRelayHandler(object):
             logging.warning('NMETHODS and number of METHODS mismatch')
             raise BadSocksHeader
         noauth_exist = False
+        userauth_exist = False
         for method in data[2:]:
             if common.ord(method) == METHOD_NOAUTH:
                 noauth_exist = True
-                break
+            elif common.ord(method) == METHOD_USERPW:
+                userauth_exist = True
+        auth, username, passwd = authuser_conf.user_info(self._config)
+        if auth:
+            if userauth_exist:
+                raise UserPassAuth
+            else:
+                raise BadSocksHeader
         if not noauth_exist:
             logging.warning('none of SOCKS METHOD\'s '
                             'requested by client is supported')
             raise NoAcceptableMethods
+
+    def _check_user_pw(self, data):
+        if len(data) < 5:
+            logging.warning('auth selection header too short')
+            raise BadSocksHeader
+        socks_version = common.ord(data[0])
+        # if socks_version != 5:
+        #     logging.warning('unsupported SOCKS protocol version ' +
+        #                     str(socks_version))
+        #     raise BadSocksHeader
+        ulen = common.ord(data[1])
+        uname = data[2:2+ulen]
+        plen = common.ord(data[2+ulen:2+ulen+1])
+        passwd = data[3+ulen:3+ulen+plen]
+        auth, username, passwd = authuser_conf.user_info(self._config)
+        if username == None :
+            return
+        if uname != username:
+            raise BadSocksHeader
+        if passwd != passwd:
+            raise BadSocksHeader
+
+    def _handle_user_pass(self, data):
+        try:
+            self._check_user_pw(data)
+        except  BadSocksHeader:
+            self.destroy()
+            return
+        except Exception:
+            self.destroy()
+            return
+        send_data = data[0] + b'\x00'
+        self._write_to_sock(send_data, self._local_sock)
+        self._stage = STAGE_ADDR
 
     def _handle_stage_init(self, data):
         try:
@@ -545,7 +593,10 @@ class TCPRelayHandler(object):
             self._write_to_sock(b'\x05\xff', self._local_sock)
             self.destroy()
             return
-
+        except UserPassAuth:
+            self._stage = STAGE_USERPASS
+            self._write_to_sock(b'\x05\02', self._local_sock)
+            return
         self._write_to_sock(b'\x05\00', self._local_sock)
         self._stage = STAGE_ADDR
 
@@ -584,6 +635,8 @@ class TCPRelayHandler(object):
                 return
             else:
                 self._handle_stage_init(data)
+        elif is_local and self._stage == STAGE_USERPASS:
+            self._handle_user_pass(data)
         elif self._stage == STAGE_CONNECTING:
             self._handle_stage_connecting(data)
         elif (is_local and self._stage == STAGE_ADDR) or \
