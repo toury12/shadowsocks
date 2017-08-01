@@ -21,12 +21,12 @@ Server
 Debian / Ubuntu:
 
     apt-get install python-pip
-    pip install git+https://github.com/shadowsocks/shadowsocks.git@master
+    pip install git+https://github.com/toury12/shadowsocks.git@master
 
 CentOS:
 
     yum install python-setuptools && easy_install pip
-    pip install git+https://github.com/shadowsocks/shadowsocks.git@master
+    pip install git+https://github.com/toury12/shadowsocks.git@master
 
 Windows:
 
@@ -60,7 +60,10 @@ To start:
     ssserver -c /etc/shadowsocks.json
 
 ### 添加用户名密码授权
-
+在配置文件里配置:
+    "enable_auth": true,  在不需要验证的情况下，值设为false
+    "username": "username",
+    "passwd": "passwd"
 
 Documentation
 -------------
