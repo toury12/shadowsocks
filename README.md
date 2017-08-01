@@ -65,7 +65,7 @@ To start:
 
     "enable_auth": true,  在不需要验证的情况下，值设为false
 
-    "username": "username",
+    "username": "username"
 
     "passwd": "passwd"
 
